@@ -1,0 +1,93 @@
+data "aws_ami" "amazon_linux" {
+  most_recent = true
+  filter {
+    name   = "name"
+    values = ["al2023-ami*-x86_64"] # Replace with Amazon Linux 2023 pattern
+  }
+  owners = ["amazon"] # Amazon's AWS Account
+}
+
+resource "aws_instance" "cog-whisper-diarization" {
+  instance_type = "g6.2xlarge"
+  ami           = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
+  #instance_type          = "t3.micro"
+  #ami                    = "ami-0cdd6d7420844683b" # Amazon Linux 2023
+  subnet_id              = module.models_vpc.private_subnets[0]
+  vpc_security_group_ids = [aws_security_group.models_ec2_sg.id]
+  iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
+
+  tags = {
+    Name = "cog-whisper-diarization"
+  }
+
+  root_block_device {
+    volume_size = 200   # Replace with the desired size in GB
+    volume_type = "gp3" # General Purpose SSD (default)
+  }
+
+  user_data_replace_on_change = true
+  user_data                   = <<-EOF
+                #!/bin/bash
+
+                # Authenticate Docker to ECR
+                aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 767828746624.dkr.ecr.eu-central-1.amazonaws.com;
+
+                # Pull and run the cog-whisper-diarization model
+                docker run -d --gpus all -p 5000:5000 767828746624.dkr.ecr.eu-central-1.amazonaws.com/cog-whisper-diarization
+            EOF
+}
+
+resource "aws_security_group" "models_ec2_sg" {
+  name        = "models-ec2_sg"
+  description = "Allow ALB traffic on port 80"
+  vpc_id      = module.models_vpc.vpc_id
+
+  ingress {
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
+    cidr_blocks = ["10.10.0.0/21"] # ALB subnet range
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+resource "aws_iam_role" "ec2_instance_role" {
+  name = "ec2-instance-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17",
+    Statement = [
+      {
+        Action = "sts:AssumeRole",
+        Effect = "Allow",
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_policy_attachment" "ssm_policy_attachment" {
+  name       = "ssm-managed-policy-attachment"
+  roles      = [aws_iam_role.ec2_instance_role.name]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_policy_attachment" "ecr_policy_attachment" {
+  name       = "ecr-managed-policy-attachment"
+  roles      = [aws_iam_role.ec2_instance_role.name]
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
+}
+
+
+resource "aws_iam_instance_profile" "ec2_instance_profile" {
+  name = "ec2-instance-profile"
+  role = aws_iam_role.ec2_instance_role.name
+}
