@@ -1,3 +1,5 @@
+data "aws_caller_identity" "current" {}
+
 module "models_vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.17.0"

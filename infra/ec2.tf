@@ -7,17 +7,17 @@ data "aws_ami" "amazon_linux" {
   owners = ["amazon"] # Amazon's AWS Account
 }
 
-resource "aws_instance" "cog-whisper-diarization" {
-  instance_type = "g6.2xlarge"
+resource "aws_instance" "whisper-diarization" {
+  instance_type = "g5.xlarge"
   ami           = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
   #instance_type          = "t3.micro"
   #ami                    = "ami-0cdd6d7420844683b" # Amazon Linux 2023
-  subnet_id              = module.models_vpc.private_subnets[0]
+  subnet_id              = module.models_vpc.public_subnets[0]
   vpc_security_group_ids = [aws_security_group.models_ec2_sg.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
 
   tags = {
-    Name = "cog-whisper-diarization"
+    Name = "g5-whisper-diarization"
   }
 
   root_block_device {
@@ -25,17 +25,36 @@ resource "aws_instance" "cog-whisper-diarization" {
     volume_type = "gp3" # General Purpose SSD (default)
   }
 
+  user_data = templatefile("${path.module}/user-data-template.sh", {
+    MODEL_PACKAGE_S3_URI = "s3://models-bucket-just-stag/whisper-diarization.tar.gz"
+  })
+
   user_data_replace_on_change = true
-  user_data                   = <<-EOF
-                #!/bin/bash
 
-                # Authenticate Docker to ECR
-                aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin 767828746624.dkr.ecr.eu-central-1.amazonaws.com;
-
-                # Pull and run the cog-whisper-diarization model
-                docker run -d --gpus all -p 5000:5000 767828746624.dkr.ecr.eu-central-1.amazonaws.com/cog-whisper-diarization
-            EOF
 }
+
+
+resource "aws_security_group" "models_ec2_direct_sg" {
+  name        = "models-ec2_direct_sg"
+  description = "Allow traffic on port 8000"
+  vpc_id      = module.models_vpc.vpc_id
+
+  ingress {
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+
 
 resource "aws_security_group" "models_ec2_sg" {
   name        = "models-ec2_sg"
@@ -72,6 +91,29 @@ resource "aws_iam_role" "ec2_instance_role" {
       }
     ]
   })
+}
+
+resource "aws_iam_policy" "s3_model_access_policy" {
+  name        = "EC2S3CopyPolicy"
+  description = "Allows EC2 instances to copy a model from S3"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject"
+        ]
+        Resource = "${module.models_bucket.bucket_arn}/*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "s3_model_access_policy_attachment" {
+  policy_arn = aws_iam_policy.s3_model_access_policy.arn
+  role       = aws_iam_role.ec2_instance_role.name
 }
 
 resource "aws_iam_policy_attachment" "ssm_policy_attachment" {

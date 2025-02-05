@@ -58,6 +58,6 @@ resource "aws_lb_listener" "cog_whisper_diarization_lb_listener" {
 # Attach the cog-whisper-diarization model to the target group
 resource "aws_lb_target_group_attachment" "tg_attachment" {
   target_group_arn = aws_lb_target_group.cog_whisper_diarization_tg.arn
-  target_id        = aws_instance.cog-whisper-diarization.id
+  target_id        = aws_instance.whisper-diarization.id
   port             = 5000
 }

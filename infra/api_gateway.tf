@@ -58,7 +58,7 @@ resource "aws_api_gateway_method_response" "proxy_method_response" {
 # Deploy the API Gateway to a stage
 resource "aws_api_gateway_deployment" "deployment" {
   rest_api_id = aws_api_gateway_rest_api.models_api.id
-  description = "Deployment - ${timestamp()}"
+  #description = "Deployment - ${timestamp()}"
 
   lifecycle {
     create_before_destroy = true
