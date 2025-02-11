@@ -12,8 +12,7 @@ pip3 install virtualenv
 wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
 tar -xf ffmpeg-release-amd64-static.tar.xz
 mv ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/
-ffmpeg
-
+ffmpeg -version
 
 # Create virtual environment
 mkdir -p /opt/venvs
@@ -25,7 +24,8 @@ chown -R ec2-user:ec2-user /opt/venvs/model
 chmod -R 755 /opt/venvs/model
 
 # Make cuda libraries available in the virtual environment
-echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.5/lib:$LD_LIBRARY_PATH' >> /opt/venvs/model/bin/activate
+#echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.5/lib:$LD_LIBRARY_PATH' >> /opt/venvs/model/bin/activate
+echo 'export LD_LIBRARY_PATH=/usr/local/cuda-12.5/lib:/opt/amazon/efa/lib64:/opt/amazon/openmpi/lib64:/opt/aws-ofi-nccl/lib:/usr/local/cuda-12.4/lib:/usr/local/cuda-12.4/lib64:/usr/local/cuda-12.4:/usr/local/cuda-12.4/targets/x86_64-linux/lib/:/usr/local/lib:/usr/lib:/lib' >> /opt/venvs/model/bin/activate
 
 # Activate virtual environment on login
 echo 'source /opt/venvs/model/bin/activate' >> /home/ec2-user/.bashrc
@@ -51,11 +51,14 @@ chmod -R 755 /opt/model
 cat <<EOF > /etc/systemd/system/model.service
 [Unit]
 Description=Model
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 ExecStart=/opt/venvs/model/bin/python3 -m uvicorn main:app --host 0.0.0.0 --port 8000
 WorkingDirectory=/opt/model
 Environment="PATH=/opt/venvs/model/bin:$PATH"
+Environment="LD_LIBRARY_PATH=/usr/local/cuda-12.5/lib:/opt/amazon/efa/lib64:/opt/amazon/openmpi/lib64:/opt/aws-ofi-nccl/lib:/usr/local/cuda-12.4/lib:/usr/local/cuda-12.4/lib64:/usr/local/cuda-12.4:/usr/local/cuda-12.4/targets/x86_64-linux/lib/:/usr/local/lib:/usr/lib:/lib"
 Restart=always
 User=ec2-user
 Group=ec2-user

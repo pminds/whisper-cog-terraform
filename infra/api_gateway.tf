@@ -1,8 +1,5 @@
-# Create the VPC Link
-resource "aws_api_gateway_vpc_link" "models_api_vpc_link" {
-  name        = "models-api-vpc-link"
-  target_arns = [aws_lb.models_loadbalancer.arn]
-}
+# Data source for the current region
+data "aws_region" "current" {}
 
 # Create the API Gateway REST API
 resource "aws_api_gateway_rest_api" "models_api" {
@@ -17,23 +14,7 @@ resource "aws_api_gateway_resource" "proxy" {
   path_part   = "{proxy+}"
 }
 
-# Configure the integration to send requests to the ALB
-resource "aws_api_gateway_integration" "proxy_integration" {
-  rest_api_id             = aws_api_gateway_rest_api.models_api.id
-  resource_id             = aws_api_gateway_resource.proxy.id
-  http_method             = aws_api_gateway_method.proxy_method.http_method
-  integration_http_method = "ANY"
-  type                    = "HTTP_PROXY"
-  connection_type         = "VPC_LINK"
-  connection_id           = aws_api_gateway_vpc_link.models_api_vpc_link.id
-  uri                     = "http://${aws_lb.models_loadbalancer.dns_name}:5000/{proxy}"
-
-  request_parameters = {
-    "integration.request.path.proxy" = "method.request.path.proxy" # Map the path parameter
-  }
-}
-
-# Create the ANY method to forward requests to the ALB
+# Create the ANY method to forward requests to Lambda
 resource "aws_api_gateway_method" "proxy_method" {
   rest_api_id      = aws_api_gateway_rest_api.models_api.id
   resource_id      = aws_api_gateway_resource.proxy.id
@@ -45,6 +26,26 @@ resource "aws_api_gateway_method" "proxy_method" {
   }
 }
 
+# Configure the integration to send requests to the Lambda function with FastAPI inside
+resource "aws_api_gateway_integration" "proxy_integration" {
+  rest_api_id             = aws_api_gateway_rest_api.models_api.id
+  resource_id             = aws_api_gateway_resource.proxy.id
+  http_method             = aws_api_gateway_method.proxy_method.http_method
+  type                    = "AWS_PROXY"
+  integration_http_method = "POST"
+  uri                     = "arn:aws:apigateway:${data.aws_region.current.name}:lambda:path/2015-03-31/functions/${aws_lambda_function.ec2_instance_orchestrator.arn}/invocations"
+}
+
+# Allow API Gateway to invoke your Lambda function
+resource "aws_lambda_permission" "api_gateway" {
+  statement_id  = "AllowAPIGatewayInvoke"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.ec2_instance_orchestrator.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_api_gateway_rest_api.models_api.execution_arn}/*/*"
+}
+
+# API Gateway Method Response
 resource "aws_api_gateway_method_response" "proxy_method_response" {
   rest_api_id = aws_api_gateway_rest_api.models_api.id
   resource_id = aws_api_gateway_resource.proxy.id
@@ -58,14 +59,14 @@ resource "aws_api_gateway_method_response" "proxy_method_response" {
 # Deploy the API Gateway to a stage
 resource "aws_api_gateway_deployment" "deployment" {
   rest_api_id = aws_api_gateway_rest_api.models_api.id
-  #description = "Deployment - ${timestamp()}"
 
   lifecycle {
     create_before_destroy = true
   }
 
   depends_on = [
-    aws_api_gateway_method.proxy_method
+    aws_api_gateway_method.proxy_method,
+    aws_api_gateway_integration.proxy_integration
   ]
 }
 
@@ -108,6 +109,7 @@ resource "aws_api_gateway_usage_plan_key" "default_usage_plan_customer_test" {
   key_type      = "API_KEY"
 }
 
+# API Gateway Method Settings
 resource "aws_api_gateway_method_settings" "api_settings" {
   rest_api_id = aws_api_gateway_rest_api.models_api.id
   stage_name  = aws_api_gateway_stage.stage.stage_name
