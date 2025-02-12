@@ -9,9 +9,7 @@ data "aws_ami" "amazon_linux" {
 
 resource "aws_instance" "whisper-diarization" {
   instance_type        = "g5.xlarge"
-  ami                  = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
-  #instance_type          = "t3.micro"
-  #ami                    = "ami-0cdd6d7420844683b" # Amazon Linux 2023
+  ami = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
   subnet_id            = module.models_vpc.public_subnets[0]
   vpc_security_group_ids = [aws_security_group.models_ec2_direct_sg.id]
   iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
@@ -19,7 +17,8 @@ resource "aws_instance" "whisper-diarization" {
   associate_public_ip_address = false
 
   tags = {
-    Name = "g5-whisper-diarization"
+    Name  = "g5-whisper-diarization"
+    Model = "openai/whisper-large-v3"
   }
 
   root_block_device {
@@ -35,7 +34,7 @@ resource "aws_instance" "whisper-diarization" {
 
 }
 
-resource "aws_instance" "prepared-whisper-diarization-no" {
+resource "aws_instance" "whisper-diarization-no" {
   instance_type        = "g5.xlarge"
   ami = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
   subnet_id            = module.models_vpc.public_subnets[0]
@@ -45,7 +44,8 @@ resource "aws_instance" "prepared-whisper-diarization-no" {
   associate_public_ip_address = true
 
   tags = {
-    Name = "g5-whisper-diarization-no"
+    Name  = "whisper-diarization-no"
+    Model = "NbAiLab/nb-whisper-large"
   }
 
   root_block_device {
@@ -55,34 +55,6 @@ resource "aws_instance" "prepared-whisper-diarization-no" {
 
   user_data = templatefile("${path.module}/user-data-template.sh", {
     MODEL_PACKAGE_S3_URI = "s3://models-bucket-just-stag/whisper-diarization-no.tar.gz"
-  })
-
-  user_data_replace_on_change = true
-
-}
-
-resource "aws_instance" "prepared-whisper-diarization" {
-  instance_type        = "g5.xlarge"
-  ami                  = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
-  #ami                  = "ami-02ea8ee638ebe41a6" # Prepared whisper-diarization AMI
-  #ami                    = "ami-0cdd6d7420844683b" # Amazon Linux 2023
-  subnet_id            = module.models_vpc.public_subnets[0]
-  vpc_security_group_ids = [aws_security_group.models_ec2_direct_sg.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
-
-  associate_public_ip_address = true
-
-  tags = {
-    Name = "prepared-g5-whisper-diarization"
-  }
-
-  root_block_device {
-    volume_size = 200   # Replace with the desired size in GB
-    volume_type = "gp3" # General Purpose SSD (default)
-  }
-
-  user_data = templatefile("${path.module}/user-data-template.sh", {
-    MODEL_PACKAGE_S3_URI = "s3://models-bucket-just-stag/whisper-diarization.tar.gz"
   })
 
   user_data_replace_on_change = true

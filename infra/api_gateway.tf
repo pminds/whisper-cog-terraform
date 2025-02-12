@@ -2,21 +2,21 @@
 data "aws_region" "current" {}
 
 # Create the API Gateway REST API
-resource "aws_api_gateway_rest_api" "models_api" {
-  name               = "models-api"
+resource "aws_api_gateway_rest_api" "ec2_orchestrator_api" {
+  name = "ec2-orchestrator-api"
   binary_media_types = ["*/*"]
 }
 
 # Create the proxy resource to catch all requests
 resource "aws_api_gateway_resource" "proxy" {
-  rest_api_id = aws_api_gateway_rest_api.models_api.id
-  parent_id   = aws_api_gateway_rest_api.models_api.root_resource_id
+  rest_api_id = aws_api_gateway_rest_api.ec2_orchestrator_api.id
+  parent_id   = aws_api_gateway_rest_api.ec2_orchestrator_api.root_resource_id
   path_part   = "{proxy+}"
 }
 
 # Create the ANY method to forward requests to Lambda
 resource "aws_api_gateway_method" "proxy_method" {
-  rest_api_id      = aws_api_gateway_rest_api.models_api.id
+  rest_api_id      = aws_api_gateway_rest_api.ec2_orchestrator_api.id
   resource_id      = aws_api_gateway_resource.proxy.id
   http_method      = "ANY"
   authorization    = "NONE"
@@ -28,7 +28,7 @@ resource "aws_api_gateway_method" "proxy_method" {
 
 # Configure the integration to send requests to the Lambda function with FastAPI inside
 resource "aws_api_gateway_integration" "proxy_integration" {
-  rest_api_id             = aws_api_gateway_rest_api.models_api.id
+  rest_api_id             = aws_api_gateway_rest_api.ec2_orchestrator_api.id
   resource_id             = aws_api_gateway_resource.proxy.id
   http_method             = aws_api_gateway_method.proxy_method.http_method
   type                    = "AWS_PROXY"
@@ -42,12 +42,12 @@ resource "aws_lambda_permission" "api_gateway" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.ec2_instance_orchestrator.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_api_gateway_rest_api.models_api.execution_arn}/*/*"
+  source_arn    = "${aws_api_gateway_rest_api.ec2_orchestrator_api.execution_arn}/*/*"
 }
 
 # API Gateway Method Response
 resource "aws_api_gateway_method_response" "proxy_method_response" {
-  rest_api_id = aws_api_gateway_rest_api.models_api.id
+  rest_api_id = aws_api_gateway_rest_api.ec2_orchestrator_api.id
   resource_id = aws_api_gateway_resource.proxy.id
   http_method = aws_api_gateway_method.proxy_method.http_method
   status_code = "200"
@@ -58,7 +58,7 @@ resource "aws_api_gateway_method_response" "proxy_method_response" {
 
 # Deploy the API Gateway to a stage
 resource "aws_api_gateway_deployment" "deployment" {
-  rest_api_id = aws_api_gateway_rest_api.models_api.id
+  rest_api_id = aws_api_gateway_rest_api.ec2_orchestrator_api.id
 
   lifecycle {
     create_before_destroy = true
@@ -73,8 +73,8 @@ resource "aws_api_gateway_deployment" "deployment" {
 # API Gateway Stage
 resource "aws_api_gateway_stage" "stage" {
   deployment_id = aws_api_gateway_deployment.deployment.id
-  rest_api_id   = aws_api_gateway_rest_api.models_api.id
-  stage_name    = "test"
+  rest_api_id   = aws_api_gateway_rest_api.ec2_orchestrator_api.id
+  stage_name    = "v1"
 
   xray_tracing_enabled = true
 
@@ -85,9 +85,9 @@ resource "aws_api_gateway_stage" "stage" {
 }
 
 # API Key
-resource "aws_api_gateway_api_key" "api_key_customer_test" {
-  name        = "customer-test"
-  description = "API Key for testing basic HTTP server"
+resource "aws_api_gateway_api_key" "integration-api_key" {
+  name        = "integration-api-key"
+  description = "API Key for integrating frontend with EC2 instance orchestrator"
   enabled     = true
 }
 
@@ -97,7 +97,7 @@ resource "aws_api_gateway_usage_plan" "default_usage_plan" {
   description = "Default usage plan"
 
   api_stages {
-    api_id = aws_api_gateway_rest_api.models_api.id
+    api_id = aws_api_gateway_rest_api.ec2_orchestrator_api.id
     stage  = aws_api_gateway_stage.stage.stage_name
   }
 }
@@ -105,13 +105,13 @@ resource "aws_api_gateway_usage_plan" "default_usage_plan" {
 # Associate Usage Plan with API Key
 resource "aws_api_gateway_usage_plan_key" "default_usage_plan_customer_test" {
   usage_plan_id = aws_api_gateway_usage_plan.default_usage_plan.id
-  key_id        = aws_api_gateway_api_key.api_key_customer_test.id
+  key_id        = aws_api_gateway_api_key.integration-api_key.id
   key_type      = "API_KEY"
 }
 
 # API Gateway Method Settings
 resource "aws_api_gateway_method_settings" "api_settings" {
-  rest_api_id = aws_api_gateway_rest_api.models_api.id
+  rest_api_id = aws_api_gateway_rest_api.ec2_orchestrator_api.id
   stage_name  = aws_api_gateway_stage.stage.stage_name
   method_path = "*/*"
 
@@ -124,7 +124,7 @@ resource "aws_api_gateway_method_settings" "api_settings" {
 
 # CloudWatch Log Group for API Gateway Logs
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
-  name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.models_api.name}"
+  name              = "API-Gateway-Execution-Logs_${aws_api_gateway_rest_api.ec2_orchestrator_api.name}"
   retention_in_days = 365
 }
 
@@ -136,9 +136,9 @@ resource "aws_iam_role" "api_gateway_cloudwatch_role" {
     Version = "2012-10-17",
     Statement = [
       {
-        Effect    = "Allow",
+        Effect = "Allow",
         Principal = { Service = "apigateway.amazonaws.com" },
-        Action    = "sts:AssumeRole"
+        Action = "sts:AssumeRole"
       }
     ]
   })

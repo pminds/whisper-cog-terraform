@@ -8,7 +8,7 @@ transcribe speech and identify different speakers within the audio.
 The Whisper model used
 is: [https://huggingface.co/openai/whisper-large-v3](https://huggingface.co/openai/whisper-large-v3)
 
-## Packaging the Application
+## Packaging the Application for EC2 deployment
 
 To package the `main.py` and `requirements.txt` files into a `tar.gz` file, follow these steps:
 

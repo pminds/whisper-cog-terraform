@@ -1,6 +1,6 @@
 resource "null_resource" "ec2_instance_orchestrator_lambda_zip" {
   triggers = {
-    python_file = filemd5("${path.module}/../ec2_instance_orchestrator/test_api.py")
+    python_file = filemd5("${path.module}/../ec2_instance_orchestrator/ec2_orchestrator.py")
     timestamp = timestamp() # This updates with the current timestamp whenever Terraform runs
   }
 }
@@ -82,7 +82,8 @@ resource "aws_iam_role_policy" "ec2_instance_orchestrator_lambda_role_policy" {
         "ec2:CreateTags",
         "ec2:TerminateInstances",
         "ec2:StopInstances",
-        "ec2:StartInstances"
+        "ec2:StartInstances",
+        "ec2:DescribeImages"
       ],
       "Resource": "*"
     }
@@ -99,7 +100,7 @@ resource "aws_lambda_function" "ec2_instance_orchestrator" {
   s3_key    = aws_s3_object.ec2_instance_orchestrator_lambda.key
 
   runtime = "python3.12"
-  handler = "test_api.lambda_handler"
+  handler = "ec2_orchestrator.lambda_handler"
 
   role = aws_iam_role.ec2_instance_orchestrator_lambda_role.arn
 

@@ -16,6 +16,13 @@ import torchaudio
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
+
+# Retrieve the Hugging Face token from the environment variable
+hugging_face_token = os.getenv("HUGGING_FACE_TOKEN")
+if not hugging_face_token:
+    raise ValueError("The HUGGING_FACE_TOKEN environment variable is not set.")
+
+
 app = FastAPI()
 
 
@@ -38,7 +45,7 @@ class PredictRequest(BaseModel):
     offset_seconds: int = 0
 
 
-model_name = "large-v3"
+model_name = "NbAiLab/nb-whisper-large"
 whisper_model = WhisperModel(
     model_name,
     device="cuda" if torch.cuda.is_available() else "cpu",
@@ -47,7 +54,7 @@ whisper_model = WhisperModel(
 
 diarization_model = Pipeline.from_pretrained(
     "pyannote/speaker-diarization-3.1",
-    use_auth_token="",
+    use_auth_token=hugging_face_token,
 ).to(torch.device("cuda"))
 
 
