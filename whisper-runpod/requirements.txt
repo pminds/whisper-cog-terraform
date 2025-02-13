@@ -1,0 +1,13 @@
+# Speech-to-text and diarization libraries
+faster-whisper
+pyannote.audio
+
+# Data validation
+pydantic
+
+# HTTP requests
+requests
+
+# PyTorch and torchaudio (ensure these versions match your CUDA requirements)
+torch
+torchaudio
