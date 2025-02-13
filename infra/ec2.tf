@@ -1,23 +1,23 @@
 data "aws_ami" "amazon_linux" {
   most_recent = true
   filter {
-    name = "name"
+    name   = "name"
     values = ["al2023-ami*-x86_64"] # Replace with Amazon Linux 2023 pattern
   }
   owners = ["amazon"] # Amazon's AWS Account
 }
 
 resource "aws_instance" "whisper-diarization" {
-  instance_type        = "g5.xlarge"
-  ami = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
-  subnet_id            = module.models_vpc.public_subnets[0]
+  instance_type          = "g5.xlarge"
+  ami                    = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
+  subnet_id              = module.models_vpc.public_subnets[0]
   vpc_security_group_ids = [aws_security_group.models_ec2_direct_sg.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
 
   associate_public_ip_address = false
 
   tags = {
-    Name  = "g5-whisper-diarization"
+    Name  = "whisper-diarization"
     Model = "openai/whisper-large-v3"
   }
 
@@ -35,11 +35,11 @@ resource "aws_instance" "whisper-diarization" {
 }
 
 resource "aws_instance" "whisper-diarization-no" {
-  instance_type        = "g5.xlarge"
-  ami = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
-  subnet_id            = module.models_vpc.public_subnets[0]
+  instance_type          = "g5.xlarge"
+  ami                    = "ami-07bbe58ebf89ee018" # Amazon Deep Learning AMI (DLAMI)
+  subnet_id              = module.models_vpc.public_subnets[0]
   vpc_security_group_ids = [aws_security_group.models_ec2_direct_sg.id]
-  iam_instance_profile = aws_iam_instance_profile.ec2_instance_profile.name
+  iam_instance_profile   = aws_iam_instance_profile.ec2_instance_profile.name
 
   associate_public_ip_address = true
 
@@ -67,16 +67,16 @@ resource "aws_security_group" "models_ec2_direct_sg" {
   vpc_id      = module.models_vpc.vpc_id
 
   ingress {
-    from_port = 8000
-    to_port   = 8000
-    protocol  = "tcp"
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   egress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -88,16 +88,16 @@ resource "aws_security_group" "models_ec2_sg" {
   vpc_id      = module.models_vpc.vpc_id
 
   ingress {
-    from_port = 5000
-    to_port   = 5000
-    protocol  = "tcp"
+    from_port   = 5000
+    to_port     = 5000
+    protocol    = "tcp"
     cidr_blocks = ["10.10.0.0/21"] # ALB subnet range
   }
 
   egress {
-    from_port = 0
-    to_port   = 0
-    protocol  = "-1"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 }
@@ -144,13 +144,13 @@ resource "aws_iam_role_policy_attachment" "s3_model_access_policy_attachment" {
 
 resource "aws_iam_policy_attachment" "ssm_policy_attachment" {
   name       = "ssm-managed-policy-attachment"
-  roles = [aws_iam_role.ec2_instance_role.name]
+  roles      = [aws_iam_role.ec2_instance_role.name]
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
 resource "aws_iam_policy_attachment" "ecr_policy_attachment" {
   name       = "ecr-managed-policy-attachment"
-  roles = [aws_iam_role.ec2_instance_role.name]
+  roles      = [aws_iam_role.ec2_instance_role.name]
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
 }
 

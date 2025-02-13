@@ -3,8 +3,6 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from mangum import Mangum
 import boto3
-import requests
-import time
 import logging
 import traceback
 from datetime import datetime
@@ -45,18 +43,32 @@ def health_check():
     return {"status": "healthy"}
 
 
-@app.post("/create")
-def create_instance():
+from pydantic import BaseModel
+
+
+class CreateInstanceRequest(BaseModel):
+    ami_id: str
+
+
+from pydantic import BaseModel
+
+
+class CreateInstanceRequest(BaseModel):
+    ami_id: str
+
+
+@app.post("/create/{ami_id}")
+def create_instance(ami_id: str):
     print_timestamp("Starting instance launch process...")
 
-    # Configuration matching the Terraform settings
-    ami_id = "ami-04898f7d9306a855b"  # Cached whisper-diarization AMI
     instance_type = "g5.xlarge"
-    subnet_id = "subnet-0782b2c51913f5597"  # Replace with your subnet ID
-    security_group_id = "sg-035e9d14ca33b05dd"  # Replace with your security group ID
-    iam_instance_profile_name = (
-        "ec2-instance-profile"  # Replace with your IAM instance profile name
-    )
+    # List of subnets across the three availability zones
+    available_subnets = [
+        "subnet-0782b2c51913f5597",  # eu-central-1a
+        "subnet-0563d0db138045902",  # eu-central-1b
+    ]
+    security_group_id = "sg-035e9d14ca33b05dd"
+    iam_instance_profile_name = "ec2-instance-profile"
     tag_name = "boto3-g5-whisper-diarization"
     volume_size = 200  # in GB
     volume_type = "gp3"
@@ -64,7 +76,7 @@ def create_instance():
     # Log configuration parameters
     print_timestamp(
         f"Configuration: ami_id={ami_id}, instance_type={instance_type}, "
-        f"subnet_id={subnet_id}, security_group_id={security_group_id}, "
+        f"available_subnets={available_subnets}, security_group_id={security_group_id}, "
         f"iam_instance_profile_name={iam_instance_profile_name}, tag_name={tag_name}, "
         f"volume_size={volume_size}, volume_type={volume_type}"
     )
@@ -77,41 +89,63 @@ def create_instance():
         print_timestamp(f"Error creating EC2 resource: {e}")
         raise HTTPException(status_code=500, detail=f"Error creating EC2 resource: {e}")
 
-    # Launch the instance
-    try:
-        print_timestamp("Sending request to launch EC2 instance...")
-        instance = ec2.create_instances(
-            ImageId=ami_id,
-            InstanceType=instance_type,
-            MinCount=1,
-            MaxCount=1,
-            NetworkInterfaces=[
-                {
-                    "SubnetId": subnet_id,
-                    "DeviceIndex": 0,
-                    "AssociatePublicIpAddress": True,
-                    "Groups": [security_group_id],
-                }
-            ],
-            IamInstanceProfile={"Name": iam_instance_profile_name},
-            TagSpecifications=[
-                {
-                    "ResourceType": "instance",
-                    "Tags": [{"Key": "Name", "Value": tag_name}],
-                }
-            ],
-            BlockDeviceMappings=[
-                {
-                    "DeviceName": "/dev/sda1",  # Default root device name
-                    "Ebs": {"VolumeSize": volume_size, "VolumeType": volume_type},
-                }
-            ],
-        )[0]
-        print_timestamp(f"Instance creation request sent. Instance ID: {instance.id}")
-    except Exception as e:
-        print_timestamp(f"Error launching instance: {e}")
-        print_timestamp(traceback.format_exc())
-        raise HTTPException(status_code=500, detail=f"Error launching instance: {e}")
+    instance = None
+    last_error = None
+
+    # Attempt to launch the instance in one of the available subnets
+    for subnet_id in available_subnets:
+        try:
+            print_timestamp(f"Attempting to launch instance in subnet {subnet_id}...")
+            instance = ec2.create_instances(
+                ImageId=ami_id,
+                InstanceType=instance_type,
+                MinCount=1,
+                MaxCount=1,
+                NetworkInterfaces=[
+                    {
+                        "SubnetId": subnet_id,
+                        "DeviceIndex": 0,
+                        "AssociatePublicIpAddress": True,
+                        "Groups": [security_group_id],
+                    }
+                ],
+                IamInstanceProfile={"Name": iam_instance_profile_name},
+                TagSpecifications=[
+                    {
+                        "ResourceType": "instance",
+                        "Tags": [{"Key": "Name", "Value": tag_name}],
+                    }
+                ],
+                BlockDeviceMappings=[
+                    {
+                        "DeviceName": "/dev/sda1",  # Default root device name
+                        "Ebs": {"VolumeSize": volume_size, "VolumeType": volume_type},
+                    }
+                ],
+            )[0]
+            print_timestamp(
+                f"Instance creation request sent. Instance ID: {instance.id} in subnet {subnet_id}"
+            )
+            break  # Successfully launched; exit the loop
+        except Exception as e:
+            last_error = e
+            if "InsufficientInstanceCapacity" in str(e):
+                print_timestamp(
+                    f"Insufficient capacity in subnet {subnet_id}. Trying next subnet..."
+                )
+            else:
+                print_timestamp(f"Error launching instance in subnet {subnet_id}: {e}")
+                print_timestamp(traceback.format_exc())
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Error launching instance in subnet {subnet_id}: {e}",
+                )
+
+    if instance is None:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error launching instance in all subnets. Last error: {last_error}",
+        )
 
     # Wait until the instance is in the "running" state
     try:
@@ -126,7 +160,7 @@ def create_instance():
             status_code=500, detail=f"Error waiting for instance to run: {e}"
         )
 
-    # Add an Model tag to the running instance
+    # Add a Model tag to the running instance using the value from the AMI
     additional_tag_key = "Model"
     additional_tag_value = get_model_tag_value(ami_id)
     try:
@@ -147,33 +181,9 @@ def create_instance():
     health_url = f"http://{instance.public_ip_address}:8000/health"
     print_timestamp(f"Starting health checks at {health_url} every 1 second...")
 
-    #  # Loop to check the /health endpoint every 1 second, with a maximum of 60 attempts
-    #  max_attempts = 60
-    #  attempt = 0
-    #  response_status = None
-    #  while attempt < max_attempts:
-    #      try:
-    #          print_timestamp(f"Health check attempt {attempt + 1}")
-    #          response = requests.get(health_url, timeout=5)
-    #          response_status = response.status_code
-    #          print_timestamp(f"/health response status: {response_status}")
-    #          if response_status == 200:
-    #              print_timestamp("Health endpoint is up and responding!")
-    #              break
-    #      except Exception as e:
-    #          print_timestamp(f"Health check attempt {attempt + 1} failed: {e}")
-    #      time.sleep(1)
-    #      attempt += 1
-    #  else:
-    #      print_timestamp("Health check did not respond in time after maximum attempts.")
-    #      raise HTTPException(
-    #          status_code=504, detail="Health check endpoint did not respond in time."
-    #      )
-
     return {
         "instance_id": instance.id,
         "public_ip": instance.public_ip_address,
-        #      "health_check_status": response_status,
     }
 
 
@@ -226,7 +236,7 @@ async def get_instance_status(instance_id: str):
 @app.get("/list")
 def list_running_ec2_instances() -> Dict[str, List[Dict]]:
     """
-    Lists all running EC2 instances along with their tags and predict endpoint.
+    Lists all running EC2 instances that have the 'Model' tag, along with their tags and predict endpoint.
     """
     ec2 = boto3.client("ec2")
     response = ec2.describe_instances(
@@ -234,7 +244,11 @@ def list_running_ec2_instances() -> Dict[str, List[Dict]]:
             {
                 "Name": "instance-state-name",
                 "Values": ["initializing", "running", "stopping", "stopped"],
-            }
+            },
+            {
+                "Name": "tag-key",
+                "Values": ["Model"],
+            },
         ]
     )
 

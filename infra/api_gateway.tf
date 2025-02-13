@@ -3,7 +3,7 @@ data "aws_region" "current" {}
 
 # Create the API Gateway REST API
 resource "aws_api_gateway_rest_api" "ec2_orchestrator_api" {
-  name = "ec2-orchestrator-api"
+  name               = "ec2-orchestrator-api"
   binary_media_types = ["*/*"]
 }
 
@@ -136,9 +136,9 @@ resource "aws_iam_role" "api_gateway_cloudwatch_role" {
     Version = "2012-10-17",
     Statement = [
       {
-        Effect = "Allow",
+        Effect    = "Allow",
         Principal = { Service = "apigateway.amazonaws.com" },
-        Action = "sts:AssumeRole"
+        Action    = "sts:AssumeRole"
       }
     ]
   })

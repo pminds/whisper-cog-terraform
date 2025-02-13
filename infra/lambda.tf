@@ -1,7 +1,7 @@
 resource "null_resource" "ec2_instance_orchestrator_lambda_zip" {
   triggers = {
     python_file = filemd5("${path.module}/../ec2_instance_orchestrator/ec2_orchestrator.py")
-    timestamp = timestamp() # This updates with the current timestamp whenever Terraform runs
+    timestamp   = timestamp() # This updates with the current timestamp whenever Terraform runs
   }
 }
 
